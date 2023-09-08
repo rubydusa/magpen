@@ -71,13 +71,13 @@ impl State {
             trail: Mesh::new_rectangle(
                 &ctx.gfx,
                 DrawMode::Fill(FillOptions::DEFAULT),
-                Rect { x: 0., y: 0., w: 3., h: 3. },
-                Color::BLUE
+                Rect { x: 1., y: 1., w: 2., h: 2. },
+                Color::RED
             ).unwrap(),
             ball: Ball {
                 mass: 1.,
                 pos: vec2(0.5, 0.5),
-                rope_len: 1.,
+                rope_len: 2.,
                 rope_pivot: vec3(0., 0., 2.),
                 velocity: vec3(1., 0., 0.)
             }
