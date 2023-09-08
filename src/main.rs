@@ -4,7 +4,7 @@ use ggez::graphics::*;
 
 const GRAVITY: f32 = 10.;
 const PIXELS_PER_METER: f32 = 100.;
-const C: f32 = 5.;
+const C: f32 = 0.1;
 const PRECISION: f32 = 0.001;
 
 struct Ball {
@@ -23,10 +23,6 @@ fn canvas_position(pos: Vec2, ctx: &mut Context) -> Vec2 {
 }
 
 impl Ball {
-    fn tension(&self) -> f32 {
-        GRAVITY * self.mass
-    }
-
     fn ball_height(&self) -> f32 {
         let a = self.pos.distance(self.rope_pivot.xy());
         let c = self.rope_len;
@@ -38,8 +34,7 @@ impl Ball {
         let times = (time_delta / PRECISION).floor() as u32;
         for _ in 0..times {
             let ball_pos = vec3(self.pos.x, self.pos.y, self.ball_height());
-            let rope_vec = self.rope_pivot - ball_pos;
-            let rope_force = rope_vec.normalize() * self.tension();
+            // calculate forces
             let gravity_force = vec3(0., 0., -1. * GRAVITY * self.mass);
 
             let mut magnetic_force = vec3(0., 0., 0.);
@@ -51,9 +46,20 @@ impl Ball {
                magnetic_force += v;
             }
 
-            // println!("mag: {}\n, non_mag: {}\n, ball_pos: {}", magnetic_force, rope_force + gravity_force, ball_pos);
+            let force_vector = gravity_force + magnetic_force;
+            let rope_vector = self.rope_pivot - ball_pos;
 
-            let force = rope_force + gravity_force + magnetic_force;
+            let angle = force_vector.dot(rope_vector) * force_vector.length_recip() * rope_vector.length_recip().to_degrees();
+            let normal = if angle < 90. {
+                -1. * rope_vector
+            } else {
+                rope_vector
+            };
+
+
+            let force_projected_onto_normal = (force_vector.dot(rope_vector) / normal.length_squared()) * normal;
+            let force = force_vector + force_projected_onto_normal;
+
             let a = force / self.mass;
             self.velocity += a * PRECISION;
             self.pos += self.velocity.xy() * PRECISION;
@@ -106,10 +112,10 @@ impl State {
                 Color::BLACK
             ).unwrap(),
             ball: Ball {
-                mass: 4.,
-                pos: vec2(1.5, 1.5),
-                rope_len: 50.,
-                rope_pivot: vec3(0., 0., 50.01),
+                mass: 0.1,
+                pos: vec2(1., 1.),
+                rope_len: 10.,
+                rope_pivot: vec3(0., 0., 10.01),
                 velocity: vec3(0., 0., 0.),
                 magnets: vec![
                     vec2((30.0 as f32).to_radians().cos(), (30.0 as f32).to_radians().sin()),
