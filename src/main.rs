@@ -4,13 +4,22 @@ use ggez::graphics::*;
 
 const GRAVITY: f32 = 10.;
 const PIXELS_PER_METER: f32 = 100.;
+const C: f32 = 5.;
+const PRECISION: f32 = 0.001;
 
 struct Ball {
     mass: f32,
     pos: Vec2,
     rope_len: f32,
     rope_pivot: Vec3,
-    velocity: Vec3
+    velocity: Vec3,
+    magnets: Vec<Vec2>
+}
+
+fn canvas_position(pos: Vec2, ctx: &mut Context) -> Vec2 {
+    let center: Vec2 = ctx.gfx.size().into();
+    let center = center / 2.;
+    center + pos * PIXELS_PER_METER
 }
 
 impl Ball {
@@ -21,19 +30,34 @@ impl Ball {
     fn ball_height(&self) -> f32 {
         let a = self.pos.distance(self.rope_pivot.xy());
         let c = self.rope_len;
-        (c - a) * (c + a)
+        let b = self.rope_pivot.z - ((c - a) * (c + a)).sqrt();
+        b
     }
 
     fn move_self(&mut self, time_delta: f32) {
-        let ball_pos = vec3(self.pos.x, self.pos.y, self.ball_height());
-        let rope_vec = self.rope_pivot - ball_pos;
-        let rope_force = rope_vec.normalize() * self.tension();
-        let gravity_force = vec3(0., 0., -1. * GRAVITY * self.mass);
-        let force = rope_force + gravity_force;
-        let a = force / self.mass;
-        self.velocity += a * time_delta;
+        let times = (time_delta / PRECISION).floor() as u32;
+        for _ in 0..times {
+            let ball_pos = vec3(self.pos.x, self.pos.y, self.ball_height());
+            let rope_vec = self.rope_pivot - ball_pos;
+            let rope_force = rope_vec.normalize() * self.tension();
+            let gravity_force = vec3(0., 0., -1. * GRAVITY * self.mass);
 
-        self.pos += self.velocity.xy() * time_delta;
+            let mut magnetic_force = vec3(0., 0., 0.);
+            for magnet in self.magnets.iter() {
+               let v = vec3(magnet.x, magnet.y, 0.) - ball_pos; 
+               let mag = C / v.length_squared();
+               let v = v.normalize() * mag;
+
+               magnetic_force += v;
+            }
+
+            // println!("mag: {}\n, non_mag: {}\n, ball_pos: {}", magnetic_force, rope_force + gravity_force, ball_pos);
+
+            let force = rope_force + gravity_force + magnetic_force;
+            let a = force / self.mass;
+            self.velocity += a * PRECISION;
+            self.pos += self.velocity.xy() * PRECISION;
+        }
     }
 
     fn canvas_position(&self, ctx: &mut Context) -> Vec2 {
@@ -47,6 +71,7 @@ struct State {
     bg: ScreenImage,
     circle: Mesh,
     trail: Mesh,
+    magnet: Mesh,
     ball: Ball 
 }
 
@@ -74,12 +99,23 @@ impl State {
                 Rect { x: 1., y: 1., w: 2., h: 2. },
                 Color::RED
             ).unwrap(),
+            magnet: Mesh::new_rectangle(
+                &ctx.gfx,
+                DrawMode::Fill(FillOptions::DEFAULT),
+                Rect { x: 5., y: 5., w: 10., h: 10. },
+                Color::BLACK
+            ).unwrap(),
             ball: Ball {
-                mass: 1.,
-                pos: vec2(0.5, 0.5),
-                rope_len: 2.,
-                rope_pivot: vec3(0., 0., 2.),
-                velocity: vec3(1., 0., 0.)
+                mass: 4.,
+                pos: vec2(1.5, 1.5),
+                rope_len: 50.,
+                rope_pivot: vec3(0., 0., 50.01),
+                velocity: vec3(0., 0., 0.),
+                magnets: vec![
+                    vec2((30.0 as f32).to_radians().cos(), (30.0 as f32).to_radians().sin()),
+                    vec2((150.0 as f32).to_radians().cos(), (150.0 as f32).to_radians().sin()),
+                    vec2((270.0 as f32).to_radians().cos(), (270.0 as f32).to_radians().sin())
+                ]
             }
         }
     }
@@ -103,7 +139,11 @@ impl ggez::event::EventHandler<GameError> for State {
 
         let mut canvas2 = Canvas::from_frame(ctx, Color::WHITE);
         self.bg.image(&mut ctx.gfx).draw(&mut canvas2, DrawParam::new());
+        for magnet in self.ball.magnets.iter() {
+            canvas2.draw(&self.magnet, canvas_position(*magnet, ctx))
+        }
         canvas2.draw(&self.circle, pos);
+
         canvas2.finish(&mut ctx.gfx)?;
 
         Ok(())
