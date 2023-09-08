@@ -35,30 +35,51 @@ impl Ball {
 
         self.pos += self.velocity.xy() * time_delta;
     }
+
+    fn canvas_position(&self, ctx: &mut Context) -> Vec2 {
+        let center: Vec2 = ctx.gfx.size().into();
+        let center = center / 2.;
+        center + self.pos * PIXELS_PER_METER
+    }
 }
 
 struct State {
+    bg: ScreenImage,
     circle: Mesh,
+    trail: Mesh,
     ball: Ball 
 }
 
 impl State {
     fn new(ctx: &mut Context) -> State {
         State {
-            circle: ggez::graphics::Mesh::new_circle(
+            bg: ScreenImage::new(
+                &ctx.gfx, 
+                None, 
+                1., 
+                1., 
+                1
+            ),
+            circle: Mesh::new_circle(
                 &ctx.gfx,
                 DrawMode::Fill(FillOptions::DEFAULT),
                 vec2(0., 0.),
                 10.,
-                10.,
+                0.01,
+                Color::BLUE
+            ).unwrap(),
+            trail: Mesh::new_rectangle(
+                &ctx.gfx,
+                DrawMode::Fill(FillOptions::DEFAULT),
+                Rect { x: 0., y: 0., w: 3., h: 3. },
                 Color::BLUE
             ).unwrap(),
             ball: Ball {
                 mass: 1.,
-                pos: vec2(0., 0.),
+                pos: vec2(0.5, 0.5),
                 rope_len: 1.,
-                rope_pivot: vec3(0.5, 0.5, 2.),
-                velocity: vec3(0., 0., 0.)
+                rope_pivot: vec3(0., 0., 2.),
+                velocity: vec3(1., 0., 0.)
             }
         }
     }
@@ -75,18 +96,23 @@ impl ggez::event::EventHandler<GameError> for State {
     }
 
     fn draw(&mut self, ctx: &mut Context) -> Result<(), GameError> { 
-        let mut canvas = graphics::Canvas::from_frame(ctx, Color::WHITE);
-
-        canvas.draw(&self.circle, self.ball.pos * PIXELS_PER_METER);
-
+        let pos = self.ball.canvas_position(ctx);
+        let mut canvas = Canvas::from_screen_image(ctx, &mut self.bg, None);
+        canvas.draw(&self.trail, pos);
         canvas.finish(&mut ctx.gfx)?;
+
+        let mut canvas2 = Canvas::from_frame(ctx, Color::WHITE);
+        self.bg.image(&mut ctx.gfx).draw(&mut canvas2, DrawParam::new());
+        canvas2.draw(&self.circle, pos);
+        canvas2.finish(&mut ctx.gfx)?;
+
         Ok(())
     }
 }
 
 fn main() {
     let c = conf::Conf::new();
-    let (mut ctx, event_loop) = ContextBuilder::new("hello_ggez", "awesome_person")
+    let (mut ctx, event_loop) = ContextBuilder::new("magpen", "rubydusa")
         .default_conf(c)
         .build()
         .unwrap();
