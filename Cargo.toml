@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 ggez = "0.9.3"
+image = "0.24.7"

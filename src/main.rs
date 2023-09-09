@@ -1,6 +1,10 @@
+use std::path::Path;
+
 use ggez::*;
 use ggez::glam::*;
 use ggez::graphics::*;
+
+use image::{RgbImage, Rgb};
 
 fn canvas_position(pos: Vec2, ctx: &mut Context, physics_ctx: &PhysicsContext) -> Vec2 {
     let center: Vec2 = ctx.gfx.size().into();
@@ -11,6 +15,10 @@ fn canvas_position(pos: Vec2, ctx: &mut Context, physics_ctx: &PhysicsContext) -
 fn world_position(pos: Vec2, ctx: &mut Context, physics_ctx: &PhysicsContext) -> Vec2 {
     let center: Vec2 = ctx.gfx.size().into();
     let center = center / 2.;
+    (pos - center) / physics_ctx.pixels_per_meter
+}
+
+fn world_position2(pos: Vec2, center: Vec2, physics_ctx: &PhysicsContext) -> Vec2 {
     (pos - center) / physics_ctx.pixels_per_meter
 }
 
@@ -32,7 +40,7 @@ impl PhysicsContext {
             gravity: 10., 
             pixels_per_meter: 3000., 
             magnet_coefficent: 0.0002,
-            time_precision: 0.001,
+            time_precision: 0.0001,
             speed: 0.7
         }
     }
@@ -87,6 +95,13 @@ impl Ball {
         let a = force / self.mass;
         self.velocity += a * physics_ctx.time_precision;
         self.pos += self.velocity.xy() * physics_ctx.time_precision;
+    }
+
+    fn move_over_speed1(&mut self, time_delta: f32, physics_ctx: &PhysicsContext) {
+        let times = (time_delta / physics_ctx.time_precision).floor() as u32;
+        for _ in 0..times {
+            self.move_step(physics_ctx);
+        }
     }
 
     fn move_over_time(&mut self, time_delta: f32, physics_ctx: &PhysicsContext) {
@@ -188,6 +203,8 @@ impl ggez::event::EventHandler<GameError> for State {
             *self = State::new(world_position(ctx.mouse.position().into(), ctx, &self.physics_ctx), ctx);
         }
         self.update(ctx);
+
+        // println!("velocity: {}", self.ball.velocity.xy().length());
         Ok(())
     }
 
@@ -216,13 +233,73 @@ impl ggez::event::EventHandler<GameError> for State {
 }
 
 fn main() {
+    let (w, h) = (400, 400);
+    let center = vec2(w as f32 / 2., h as f32 / 2.);
+    let mut img = RgbImage::new(w, h);
+
+    let mut physics_ctx = PhysicsContext::new();
+    physics_ctx.time_precision = 0.01;
+    let mut ball = Ball {
+        // r = 0.02
+        mass: 0.264,
+        pos: vec2(0., 0.),
+        rope_len: 0.3,
+        rope_pivot: vec3(0., 0., 0.33),
+        velocity: vec3(0., 0., 0.),
+        air_friction: 0.037,
+        magnets: vec![
+            vec3((30.0 as f32).to_radians().cos(), (30.0 as f32).to_radians().sin(), 1.) * 0.04,
+            vec3((150.0 as f32).to_radians().cos(), (150.0 as f32).to_radians().sin(), 1.) * 0.04,
+            vec3((270.0 as f32).to_radians().cos(), (270.0 as f32).to_radians().sin(), 1.) * 0.04
+        ],
+        last_positions: vec![]
+    };
+
+    let color0 = Rgb([255, 0, 0]);
+    let color1 = Rgb([255, 255, 0]);
+    let color2 = Rgb([0, 0, 255]);
+
+    for x in 0..w {
+        for y in 0..h {
+            let pos = world_position2(vec2(x as f32, y as f32), center, &physics_ctx);
+            ball.pos = pos;
+            ball.velocity = vec3(0., 0., 0.);
+            ball.move_over_speed1(30., &physics_ctx);
+
+            let end_pos = ball.pos;
+
+            let mut closest_magnet = 0;
+            let mut min_distance = end_pos.distance(ball.magnets[0].xy()); 
+            for (i, magnet_pos) in ball.magnets.iter().enumerate().skip(1) {
+                let d = end_pos.distance(magnet_pos.xy());
+                if d < min_distance {
+                    closest_magnet = i;
+                    min_distance = d;
+                }
+            }
+
+            let color = match closest_magnet {
+                0 => color0,
+                1 => color1,
+                2 => color2,
+                _ => panic!("weird index")
+            };
+
+            img.put_pixel(x, y, color)
+        }
+    }
+
+    img.save(Path::new("./test.png")).unwrap();
+
     let c = conf::Conf::new();
     let (mut ctx, event_loop) = ContextBuilder::new("magpen", "rubydusa")
         .default_conf(c)
         .build()
         .unwrap();
 
-    let state = State::new(vec2(0., 0.), &mut ctx);
+    // let image = Image::from_pixels(&mut ctx, &pixels, ImageFormat::Rgba8Uint, w, h);
+    // image.encode(&mut ctx, ImageEncodingFormat::Png, Path::new("./test.png")).unwrap();
 
+    let state = State::new(vec2(0., 0.), &mut ctx);
     event::run(ctx, event_loop, state);
 }
