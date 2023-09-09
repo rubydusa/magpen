@@ -22,7 +22,8 @@ struct PhysicsContext {
     gravity: f32,
     pixels_per_meter: f32,
     magnet_coefficent: f32,
-    time_precision: f32
+    time_precision: f32,
+    speed: f32
 }
 
 impl PhysicsContext {
@@ -31,7 +32,8 @@ impl PhysicsContext {
             gravity: 10., 
             pixels_per_meter: 3000., 
             magnet_coefficent: 0.0002,
-            time_precision: 0.001 
+            time_precision: 0.001,
+            speed: 0.7
         }
     }
 }
@@ -88,14 +90,14 @@ impl Ball {
     }
 
     fn move_over_time(&mut self, time_delta: f32, physics_ctx: &PhysicsContext) {
-        let times = (time_delta / physics_ctx.time_precision).floor() as u32;
+        let times = (time_delta * physics_ctx.speed / physics_ctx.time_precision).floor() as u32;
         for _ in 0..times {
             self.move_step(physics_ctx);
         }
     }
 
     fn move_over_time_save_positions(&mut self, time_delta: f32, physics_ctx: &PhysicsContext) {
-        let times = (time_delta / physics_ctx.time_precision).floor() as u32;
+        let times = (time_delta * physics_ctx.speed / physics_ctx.time_precision).floor() as u32;
         let positions: Vec<_> = (0..times).map(|_| {
             self.move_step(physics_ctx);
             self.pos.clone()
