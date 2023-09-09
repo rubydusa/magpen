@@ -23,8 +23,8 @@ impl PhysicsContext {
     fn new() -> PhysicsContext {
         PhysicsContext { 
             gravity: 10., 
-            pixels_per_meter: 100., 
-            magnet_coefficent: 0.1, 
+            pixels_per_meter: 3000., 
+            magnet_coefficent: 0.0004,
             time_precision: 0.001 
         }
     }
@@ -36,7 +36,8 @@ struct Ball {
     rope_len: f32,
     rope_pivot: Vec3,
     velocity: Vec3,
-    magnets: Vec<Vec2>,
+    air_friction: f32,
+    magnets: Vec<Vec3>,
 }
 
 impl Ball {
@@ -52,17 +53,18 @@ impl Ball {
         for _ in 0..times {
             let ball_pos = vec3(self.pos.x, self.pos.y, self.ball_height());
             let gravity_force = vec3(0., 0., -1. * physics_ctx.gravity * self.mass);
+            let friction_force = self.velocity.normalize_or_zero() * self.velocity.length_squared() * self.air_friction * -1.;
 
             let mut magnetic_force = vec3(0., 0., 0.);
             for magnet in self.magnets.iter() {
-               let magnet_force = vec3(magnet.x, magnet.y, 0.) - ball_pos; 
+               let magnet_force = *magnet - ball_pos; 
                let magnitude = physics_ctx.magnet_coefficent / magnet_force.length_squared();
                let magnet_force = magnet_force.normalize() * magnitude;
 
                magnetic_force += magnet_force;
             }
 
-            let force_vector = gravity_force + magnetic_force;
+            let force_vector = gravity_force + magnetic_force + friction_force;
             let rope_vector = self.rope_pivot - ball_pos;
 
             let force_projected = (force_vector.dot(rope_vector) / rope_vector.length_squared()) * rope_vector;
@@ -133,15 +135,17 @@ impl State {
                 1
             ),
             ball: Ball {
-                mass: 0.1,
-                pos: vec2(1., 1.),
-                rope_len: 10.,
-                rope_pivot: vec3(0., 0., 10.01),
+                // r = 0.02
+                mass: 0.264,
+                pos: vec2(0.05, 0.05),
+                rope_len: 0.3,
+                rope_pivot: vec3(0., 0., 0.33),
                 velocity: vec3(0., 0., 0.),
+                air_friction: 0.037,
                 magnets: vec![
-                    vec2((30.0 as f32).to_radians().cos(), (30.0 as f32).to_radians().sin()),
-                    vec2((150.0 as f32).to_radians().cos(), (150.0 as f32).to_radians().sin()),
-                    vec2((270.0 as f32).to_radians().cos(), (270.0 as f32).to_radians().sin())
+                    vec3((30.0 as f32).to_radians().cos(), (30.0 as f32).to_radians().sin(), 1.) * 0.04,
+                    vec3((150.0 as f32).to_radians().cos(), (150.0 as f32).to_radians().sin(), 1.) * 0.04,
+                    vec3((270.0 as f32).to_radians().cos(), (270.0 as f32).to_radians().sin(), 1.) * 0.04
                 ]
             },
             meshes: Meshes::new(ctx),
@@ -170,7 +174,7 @@ impl ggez::event::EventHandler<GameError> for State {
         let mut canvas = Canvas::from_frame(ctx, Color::WHITE);
         self.trail.image(&mut ctx.gfx).draw(&mut canvas, DrawParam::new());
         for magnet in self.ball.magnets.iter() {
-            canvas.draw(&self.meshes.magnet, canvas_position(*magnet, ctx, &self.physics_ctx))
+            canvas.draw(&self.meshes.magnet, canvas_position(magnet.xy(), ctx, &self.physics_ctx))
         }
         canvas.draw(&self.meshes.ball, pos);
 
