@@ -2,10 +2,33 @@ use ggez::*;
 use ggez::glam::*;
 use ggez::graphics::*;
 
-const GRAVITY: f32 = 10.;
-const PIXELS_PER_METER: f32 = 100.;
-const C: f32 = 0.1;
-const PRECISION: f32 = 0.001;
+fn canvas_position(pos: Vec2, ctx: &mut Context, physics_ctx: &PhysicsContext) -> Vec2 {
+    let center: Vec2 = ctx.gfx.size().into();
+    let center = center / 2.;
+    center + pos * physics_ctx.pixels_per_meter
+}
+
+fn angle3(x1: Vec3, x2: Vec3) -> f32 {
+    (x1.dot(x2) * x1.length_recip() * x2.length_recip()).acos()
+}
+
+struct PhysicsContext {
+    gravity: f32,
+    pixels_per_meter: f32,
+    magnet_coefficent: f32,
+    time_precision: f32
+}
+
+impl PhysicsContext {
+    fn new() -> PhysicsContext {
+        PhysicsContext { 
+            gravity: 10., 
+            pixels_per_meter: 100., 
+            magnet_coefficent: 0.1, 
+            time_precision: 0.001 
+        }
+    }
+}
 
 struct Ball {
     mass: f32,
@@ -13,13 +36,7 @@ struct Ball {
     rope_len: f32,
     rope_pivot: Vec3,
     velocity: Vec3,
-    magnets: Vec<Vec2>
-}
-
-fn canvas_position(pos: Vec2, ctx: &mut Context) -> Vec2 {
-    let center: Vec2 = ctx.gfx.size().into();
-    let center = center / 2.;
-    center + pos * PIXELS_PER_METER
+    magnets: Vec<Vec2>,
 }
 
 impl Ball {
@@ -30,68 +47,51 @@ impl Ball {
         b
     }
 
-    fn move_self(&mut self, time_delta: f32) {
-        let times = (time_delta / PRECISION).floor() as u32;
+    fn move_self(&mut self, time_delta: f32, physics_ctx: &PhysicsContext) {
+        let times = (time_delta / physics_ctx.time_precision).floor() as u32;
         for _ in 0..times {
             let ball_pos = vec3(self.pos.x, self.pos.y, self.ball_height());
-            // calculate forces
-            let gravity_force = vec3(0., 0., -1. * GRAVITY * self.mass);
+            let gravity_force = vec3(0., 0., -1. * physics_ctx.gravity * self.mass);
 
             let mut magnetic_force = vec3(0., 0., 0.);
             for magnet in self.magnets.iter() {
-               let v = vec3(magnet.x, magnet.y, 0.) - ball_pos; 
-               let mag = C / v.length_squared();
-               let v = v.normalize() * mag;
+               let magnet_force = vec3(magnet.x, magnet.y, 0.) - ball_pos; 
+               let magnitude = physics_ctx.magnet_coefficent / magnet_force.length_squared();
+               let magnet_force = magnet_force.normalize() * magnitude;
 
-               magnetic_force += v;
+               magnetic_force += magnet_force;
             }
 
             let force_vector = gravity_force + magnetic_force;
             let rope_vector = self.rope_pivot - ball_pos;
 
-            let angle = force_vector.dot(rope_vector) * force_vector.length_recip() * rope_vector.length_recip().to_degrees();
-            let normal = if angle < 90. {
-                -1. * rope_vector
+            let force_projected = (force_vector.dot(rope_vector) / rope_vector.length_squared()) * rope_vector;
+            let angle = angle3(force_projected, force_vector).to_degrees();
+            let force_projected = if angle < 90. {
+                force_projected * -1.
             } else {
-                rope_vector
+                force_projected
             };
 
-
-            let force_projected_onto_normal = (force_vector.dot(rope_vector) / normal.length_squared()) * normal;
-            let force = force_vector + force_projected_onto_normal;
+            let force = force_vector + force_projected;
 
             let a = force / self.mass;
-            self.velocity += a * PRECISION;
-            self.pos += self.velocity.xy() * PRECISION;
+            self.velocity += a * physics_ctx.time_precision;
+            self.pos += self.velocity.xy() * physics_ctx.time_precision;
         }
     }
-
-    fn canvas_position(&self, ctx: &mut Context) -> Vec2 {
-        let center: Vec2 = ctx.gfx.size().into();
-        let center = center / 2.;
-        center + self.pos * PIXELS_PER_METER
-    }
 }
 
-struct State {
-    bg: ScreenImage,
-    circle: Mesh,
-    trail: Mesh,
+struct Meshes {
+    ball: Mesh,
     magnet: Mesh,
-    ball: Ball 
+    trail: Mesh,
 }
 
-impl State {
-    fn new(ctx: &mut Context) -> State {
-        State {
-            bg: ScreenImage::new(
-                &ctx.gfx, 
-                None, 
-                1., 
-                1., 
-                1
-            ),
-            circle: Mesh::new_circle(
+impl Meshes {
+    fn new(ctx: &mut Context) -> Meshes {
+        Meshes {
+            ball: Mesh::new_circle(
                 &ctx.gfx,
                 DrawMode::Fill(FillOptions::DEFAULT),
                 vec2(0., 0.),
@@ -111,6 +111,27 @@ impl State {
                 Rect { x: 5., y: 5., w: 10., h: 10. },
                 Color::BLACK
             ).unwrap(),
+        }
+    }
+}
+
+struct State {
+    trail: ScreenImage,
+    ball: Ball,
+    meshes: Meshes,
+    physics_ctx: PhysicsContext
+}
+
+impl State {
+    fn new(ctx: &mut Context) -> State {
+        State {
+            trail: ScreenImage::new(
+                &ctx.gfx, 
+                None, 
+                1., 
+                1., 
+                1
+            ),
             ball: Ball {
                 mass: 0.1,
                 pos: vec2(1., 1.),
@@ -122,12 +143,14 @@ impl State {
                     vec2((150.0 as f32).to_radians().cos(), (150.0 as f32).to_radians().sin()),
                     vec2((270.0 as f32).to_radians().cos(), (270.0 as f32).to_radians().sin())
                 ]
-            }
+            },
+            meshes: Meshes::new(ctx),
+            physics_ctx: PhysicsContext::new()
         }
     }
 
     fn update(&mut self, ctx: &mut Context) {
-        self.ball.move_self(ctx.time.delta().as_secs_f32());
+        self.ball.move_self(ctx.time.delta().as_secs_f32(), &self.physics_ctx);
     }
 }
 
@@ -138,19 +161,20 @@ impl ggez::event::EventHandler<GameError> for State {
     }
 
     fn draw(&mut self, ctx: &mut Context) -> Result<(), GameError> { 
-        let pos = self.ball.canvas_position(ctx);
-        let mut canvas = Canvas::from_screen_image(ctx, &mut self.bg, None);
-        canvas.draw(&self.trail, pos);
-        canvas.finish(&mut ctx.gfx)?;
+        let pos = canvas_position(self.ball.pos, ctx, &self.physics_ctx);
 
-        let mut canvas2 = Canvas::from_frame(ctx, Color::WHITE);
-        self.bg.image(&mut ctx.gfx).draw(&mut canvas2, DrawParam::new());
+        let mut trail_canvas = Canvas::from_screen_image(ctx, &mut self.trail, None);
+        trail_canvas.draw(&self.meshes.trail, pos);
+        trail_canvas.finish(&mut ctx.gfx)?;
+
+        let mut canvas = Canvas::from_frame(ctx, Color::WHITE);
+        self.trail.image(&mut ctx.gfx).draw(&mut canvas, DrawParam::new());
         for magnet in self.ball.magnets.iter() {
-            canvas2.draw(&self.magnet, canvas_position(*magnet, ctx))
+            canvas.draw(&self.meshes.magnet, canvas_position(*magnet, ctx, &self.physics_ctx))
         }
-        canvas2.draw(&self.circle, pos);
+        canvas.draw(&self.meshes.ball, pos);
 
-        canvas2.finish(&mut ctx.gfx)?;
+        canvas.finish(&mut ctx.gfx)?;
 
         Ok(())
     }
