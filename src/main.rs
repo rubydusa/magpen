@@ -8,6 +8,12 @@ fn canvas_position(pos: Vec2, ctx: &mut Context, physics_ctx: &PhysicsContext) -
     center + pos * physics_ctx.pixels_per_meter
 }
 
+fn world_position(pos: Vec2, ctx: &mut Context, physics_ctx: &PhysicsContext) -> Vec2 {
+    let center: Vec2 = ctx.gfx.size().into();
+    let center = center / 2.;
+    (pos - center) / physics_ctx.pixels_per_meter
+}
+
 fn angle3(x1: Vec3, x2: Vec3) -> f32 {
     (x1.dot(x2) * x1.length_recip() * x2.length_recip()).acos()
 }
@@ -125,7 +131,7 @@ struct State {
 }
 
 impl State {
-    fn new(ctx: &mut Context) -> State {
+    fn new(pos: Vec2, ctx: &mut Context) -> State {
         State {
             trail: ScreenImage::new(
                 &ctx.gfx, 
@@ -137,7 +143,7 @@ impl State {
             ball: Ball {
                 // r = 0.02
                 mass: 0.264,
-                pos: vec2(0.05, 0.05),
+                pos,
                 rope_len: 0.3,
                 rope_pivot: vec3(0., 0., 0.33),
                 velocity: vec3(0., 0., 0.),
@@ -160,6 +166,9 @@ impl State {
 
 impl ggez::event::EventHandler<GameError> for State {
     fn update(&mut self, ctx: &mut Context) -> Result<(), GameError> {
+        if ctx.mouse.button_just_pressed(event::MouseButton::Left) {
+            *self = State::new(world_position(ctx.mouse.position().into(), ctx, &self.physics_ctx), ctx);
+        }
         self.update(ctx);
         Ok(())
     }
@@ -191,7 +200,7 @@ fn main() {
         .build()
         .unwrap();
 
-    let state = State::new(&mut ctx);
+    let state = State::new(vec2(0., 0.), &mut ctx);
 
     event::run(ctx, event_loop, state);
 }
