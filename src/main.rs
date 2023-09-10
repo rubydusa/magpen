@@ -1,5 +1,3 @@
-mod par;
-
 use std::path::Path;
 
 use ggez::*;
@@ -7,6 +5,24 @@ use ggez::glam::*;
 use ggez::graphics::*;
 
 use image::{RgbImage, Rgb};
+
+fn magnet_circle(colors: Vec<Rgb<u8>>, radius: f32, height: f32, angle_delta: f32) -> Vec<Magnet> {
+    let amount = colors.len();
+    let single_angle_change = 360. / (amount as f32);
+    colors.into_iter().enumerate().map(|(i, color)| {
+        let angle = ((i as f32) * single_angle_change) + angle_delta % 360.;
+        let position = vec3(
+            angle.to_radians().cos() * radius,
+            angle.to_radians().sin() * radius,
+            height
+        );
+
+        Magnet {
+            position,
+            color
+        }
+    }).collect()
+}
 
 fn canvas_position(pos: Vec2, ctx: &mut Context, physics_ctx: &PhysicsContext) -> Vec2 {
     let center: Vec2 = ctx.gfx.size().into();
@@ -20,7 +36,7 @@ fn world_position(pos: Vec2, ctx: &mut Context, physics_ctx: &PhysicsContext) ->
     (pos - center) / physics_ctx.pixels_per_meter
 }
 
-fn world_position2(pos: Vec2, center: Vec2, physics_ctx: &PhysicsContext) -> Vec2 {
+fn world_position_no_ctx(pos: Vec2, center: Vec2, physics_ctx: &PhysicsContext) -> Vec2 {
     (pos - center) / physics_ctx.pixels_per_meter
 }
 
@@ -41,11 +57,17 @@ impl PhysicsContext {
         PhysicsContext { 
             gravity: 10., 
             pixels_per_meter: 3000., 
-            magnet_coefficent: 0.0002,
-            time_precision: 0.0001,
-            speed: 0.7
+            magnet_coefficent: 0.00005,
+            time_precision: 0.001,
+            speed: 1.
         }
     }
+}
+
+#[derive(Clone, Copy)]
+struct Magnet {
+    position: Vec3,
+    color: Rgb<u8>
 }
 
 struct Ball {
@@ -55,7 +77,7 @@ struct Ball {
     rope_pivot: Vec3,
     velocity: Vec3,
     air_friction: f32,
-    magnets: Vec<Vec3>,
+    magnets: Vec<Magnet>,
     last_positions: Vec<Vec2>,
 }
 
@@ -74,7 +96,7 @@ impl Ball {
 
         let mut magnetic_force = vec3(0., 0., 0.);
         for magnet in self.magnets.iter() {
-            let magnet_force = *magnet - ball_pos; 
+            let magnet_force = magnet.position - ball_pos; 
             let magnitude = physics_ctx.magnet_coefficent / magnet_force.length_squared();
             let magnet_force = magnet_force.normalize() * magnitude;
 
@@ -175,18 +197,23 @@ impl State {
                 1
             ),
             ball: Ball {
-                // r = 0.02
+                // r = 0.02 of iron
                 mass: 0.264,
                 pos,
                 rope_len: 0.3,
                 rope_pivot: vec3(0., 0., 0.33),
                 velocity: vec3(0., 0., 0.),
                 air_friction: 0.037,
-                magnets: vec![
-                    vec3((30.0 as f32).to_radians().cos(), (30.0 as f32).to_radians().sin(), 1.) * 0.04,
-                    vec3((150.0 as f32).to_radians().cos(), (150.0 as f32).to_radians().sin(), 1.) * 0.04,
-                    vec3((270.0 as f32).to_radians().cos(), (270.0 as f32).to_radians().sin(), 1.) * 0.04
-                ],
+                magnets: magnet_circle(
+                    vec![
+                        Rgb([0, 0, 0]),
+                        Rgb([0, 0, 0]),
+                        Rgb([0, 0, 0]),
+                    ], 
+                    0.04, 
+                    0.03, 
+                    30.
+                ),
                 last_positions: vec![]
             },
             meshes: Meshes::new(ctx),
@@ -206,7 +233,6 @@ impl ggez::event::EventHandler<GameError> for State {
         }
         self.update(ctx);
 
-        // println!("velocity: {}", self.ball.velocity.xy().length());
         Ok(())
     }
 
@@ -224,7 +250,7 @@ impl ggez::event::EventHandler<GameError> for State {
         let mut canvas = Canvas::from_frame(ctx, Color::WHITE);
         self.trail.image(&mut ctx.gfx).draw(&mut canvas, DrawParam::new());
         for magnet in self.ball.magnets.iter() {
-            canvas.draw(&self.meshes.magnet, canvas_position(magnet.xy(), ctx, &self.physics_ctx))
+            canvas.draw(&self.meshes.magnet, canvas_position(magnet.position.xy(), ctx, &self.physics_ctx))
         }
         canvas.draw(&self.meshes.ball, last_pos);
 
@@ -234,52 +260,77 @@ impl ggez::event::EventHandler<GameError> for State {
     }
 }
 
+fn main() {
+    run_create_image();
+    // run_simulation();
+}
 
+fn run_simulation() {
+    let c = conf::Conf::new();
+    let (mut ctx, event_loop) = ContextBuilder::new("magpen", "rubydusa")
+        .default_conf(c)
+        .build()
+        .unwrap();
 
-// fn main() {
-//     let c = conf::Conf::new();
-//     let (mut ctx, event_loop) = ContextBuilder::new("magpen", "rubydusa")
-//         .default_conf(c)
-//         .build()
-//         .unwrap();
-//
-//     // let image = Image::from_pixels(&mut ctx, &pixels, ImageFormat::Rgba8Uint, w, h);
-//     // image.encode(&mut ctx, ImageEncodingFormat::Png, Path::new("./test.png")).unwrap();
-//
-//     let state = State::new(vec2(0., 0.), &mut ctx);
-//     event::run(ctx, event_loop, state);
-// }
+    let state = State::new(vec2(0., 0.), &mut ctx);
+    event::run(ctx, event_loop, state);
+}
 
-fn create_image() {
-    let (w, h) = (400, 400);
-    let center = vec2(w as f32 / 2., h as f32 / 2.);
-    let mut img = RgbImage::new(w, h);
+fn run_create_image() {
+    let image_size = 2000;
+    let magnets = magnet_circle(
+        vec![
+            Rgb([255, 0, 0]),
+            Rgb([255, 255, 0]),
+            Rgb([0, 0, 255])
+        ], 
+        0.04, 
+        0.03, 
+        30.
+    );
+
+    let (ball, physics_ctx) = setup_square_scene(
+        image_size, 
+        0.3, 
+        0.03, 
+        magnets
+    );
+
+    create_square_image(image_size, ball, &physics_ctx, Path::new("result.png"));
+}
+
+fn setup_square_scene(x: u32, rope_len: f32, min_height: f32, magnets: Vec<Magnet>) -> (Ball, PhysicsContext) {
+    let valid_square_side = 2_f32.sqrt() * rope_len;
+    let pixels_per_meter = 10. * (x as f32) / (valid_square_side);
 
     let mut physics_ctx = PhysicsContext::new();
+    physics_ctx.pixels_per_meter = pixels_per_meter;
     physics_ctx.time_precision = 0.01;
-    let mut ball = Ball {
-        // r = 0.02
+
+    let ball = Ball {
         mass: 0.264,
-        pos: vec2(0., 0.),
-        rope_len: 0.3,
-        rope_pivot: vec3(0., 0., 0.33),
+        pos: vec2(0.25, 0.),
+        rope_len,
+        rope_pivot: vec3(0., 0., rope_len + min_height),
         velocity: vec3(0., 0., 0.),
         air_friction: 0.037,
-        magnets: vec![
-            vec3((30.0 as f32).to_radians().cos(), (30.0 as f32).to_radians().sin(), 1.) * 0.04,
-            vec3((150.0 as f32).to_radians().cos(), (150.0 as f32).to_radians().sin(), 1.) * 0.04,
-            vec3((270.0 as f32).to_radians().cos(), (270.0 as f32).to_radians().sin(), 1.) * 0.04
-        ],
+        magnets,
         last_positions: vec![]
     };
 
-    let color0 = Rgb([255, 0, 0]);
-    let color1 = Rgb([255, 255, 0]);
-    let color2 = Rgb([0, 0, 255]);
+    (ball, physics_ctx)
+}
+
+fn create_square_image(x: u32, ball: Ball, physics_ctx: &PhysicsContext, path: &Path) {
+    let (w, h) = (x, x);
+    let center = vec2(w as f32 / 2., h as f32 / 2.);
+    let mut img = RgbImage::new(w, h);
+
+    let mut ball = ball;
 
     for x in 0..w {
         for y in 0..h {
-            let pos = world_position2(vec2(x as f32, y as f32), center, &physics_ctx);
+            let pos = world_position_no_ctx(vec2(x as f32, y as f32), center, &physics_ctx);
             ball.pos = pos;
             ball.velocity = vec3(0., 0., 0.);
             ball.move_over_speed1(30., &physics_ctx);
@@ -287,29 +338,18 @@ fn create_image() {
             let end_pos = ball.pos;
 
             let mut closest_magnet = 0;
-            let mut min_distance = end_pos.distance(ball.magnets[0].xy()); 
+            let mut min_distance = end_pos.distance(ball.magnets[0].position.xy()); 
             for (i, magnet_pos) in ball.magnets.iter().enumerate().skip(1) {
-                let d = end_pos.distance(magnet_pos.xy());
+                let d = end_pos.distance(magnet_pos.position.xy());
                 if d < min_distance {
                     closest_magnet = i;
                     min_distance = d;
                 }
             }
 
-            let color = match closest_magnet {
-                0 => color0,
-                1 => color1,
-                2 => color2,
-                _ => panic!("weird index")
-            };
-
-            img.put_pixel(x, y, color)
+            img.put_pixel(x, y, ball.magnets[closest_magnet].color)
         }
     }
 
-    img.save(Path::new("./test.png")).unwrap();
-}
-
-fn main () {
-    par::run();
+    img.save(path).unwrap();
 }
