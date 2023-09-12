@@ -55,9 +55,9 @@ struct PhysicsContext {
 impl PhysicsContext {
     fn new() -> PhysicsContext {
         PhysicsContext { 
-            gravity: 10., 
+            gravity: 10.,
             pixels_per_meter: 3000., 
-            magnet_coefficent: 0.00005,
+            magnet_coefficent: 0.0001,
             time_precision: 0.001,
             speed: 1.
         }
@@ -280,9 +280,10 @@ fn run_create_image() {
     let image_size = 2000;
     let magnets = magnet_circle(
         vec![
-            Rgb([255, 0, 0]),
-            Rgb([255, 255, 0]),
-            Rgb([0, 0, 255])
+            Rgb([54, 238, 3]),
+            Rgb([238, 254, 11]),
+            Rgb([255, 150, 31]),
+            Rgb([254, 78, 63])
         ], 
         0.04, 
         0.03, 
